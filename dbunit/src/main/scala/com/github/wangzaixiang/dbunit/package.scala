@@ -5,12 +5,6 @@ import scala.xml.Elem
 /**
  * Created by wangzx on 15/7/21.
  */
-package object dbunit {
-
-  implicit def xml2DataSet(xml: Elem) : DataSet = DataSet.xml2DataSet(xml)
-
-}
-
 package dbunit {
 
   sealed trait DataSetSyncMode

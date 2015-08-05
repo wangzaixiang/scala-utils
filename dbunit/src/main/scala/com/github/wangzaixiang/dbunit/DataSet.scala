@@ -5,6 +5,7 @@ import java.sql._
 import java.util
 import javax.sql.DataSource
 
+import wangzx.scala_commons.sql.Row.{BooleanCell, TimestampCell}
 import wangzx.scala_commons.sql._
 
 import scala.xml._
@@ -15,12 +16,6 @@ import scala.xml._
 object DataSet {
 
   case class Record(table: String, rowData: Row)
-
-  abstract class Cell[T](val name: String, val sqlType: Int, val value: T) {
-
-
-  }
-
 
   def dumpXml(tagName: String, rows: List[Row]): NodeSeq = rows.map { row =>
     val attributes = row.cells.foldRight(Null: MetaData) { (cell: Row.Cell[_], prev: MetaData) =>
@@ -84,7 +79,12 @@ object DataSet {
   private def getPrimaryKeys(conn: Connection, table: String): List[String] = {
     // TODO need to rewrite code for PK check
     // ensure we have the PK field
-    val rs = conn.getMetaData.getPrimaryKeys("", "", table.toUpperCase)
+    val (catalog, tableName) = {
+      val dot = table.indexOf(".")
+      if(dot >= 0) (table.substring(0, dot), table.substring(dot+1))
+      else ("", table)
+    }
+    val rs = conn.getMetaData.getPrimaryKeys(catalog, "", tableName.toUpperCase)
     val buffer = collection.mutable.ArrayBuffer[String]()
     while (rs.next) {
       val field = rs.getString("COLUMN_NAME")
@@ -94,50 +94,48 @@ object DataSet {
     buffer.toList
   }
 
-  private def updateData(conn: Connection, record: Record): Unit = {
+  private def updateData(conn: Connection, record: Record): Int = {
 
     val pk = getPrimaryKeys(conn, record.table)
 
     println("PK = " + pk)
-    assert(pk.forall(record.rowData.cells.map(_.name.toUpperCase) contains _.toUpperCase))
+    if(!pk.forall(record.rowData.cells.map(_.name.toUpperCase) contains _.toUpperCase)) 0
+    else {
 
-    val sb = StringBuilder.newBuilder.append("update ").append(record.table).append(" set ")
-    record.rowData.cells.filterNot(pk contains _.name).foreach { cell =>
-      sb.append(cell.name).append(" = ? ")
-    }
-    sb.append(" where ")
-    pk.foreach { field =>
-      sb.append(field).append(" = ? ")
-    }
+      val sb = StringBuilder.newBuilder.append("update ").append(record.table).append(" set ")
 
-    val stmt = conn.prepareStatement(sb.toString)
-    try {
-      var idx = 1
-      record.rowData.cells.filterNot(pk contains _.name).foreach { cell =>
-        stmt.setObject(idx, cell.getObject)
-        idx += 1
-      }
+      val setPart = record.rowData.cells.filterNot(pk contains _.name).map { cell =>
+        s"${cell.name}  = ? "
+      }.mkString(",")
+      sb.append(setPart)
+
+      sb.append(" where ")
       pk.foreach { field =>
-        stmt.setObject(idx, record.rowData.getObject(field))
-        idx += 1
+        sb.append(field).append(" = ? ")
       }
-      stmt.executeUpdate
-    }
-    finally {
-      stmt.close
+
+      val stmt = conn.prepareStatement(sb.toString)
+      try {
+        var idx = 1
+        record.rowData.cells.filterNot(pk contains _.name).foreach { cell =>
+          stmt.setObject(idx, cell.getObject)
+          idx += 1
+        }
+        pk.foreach { field =>
+          stmt.setObject(idx, record.rowData.getObject(field))
+          idx += 1
+        }
+        stmt.executeUpdate
+      }
+      finally {
+        stmt.close
+      }
     }
   }
 
   private def insertUpdate(conn: Connection, record: Record): Unit = {
-
-    try {
-      updateData(conn, record)
-    }
-    catch {
-      case ex: SQLException =>
+      if( updateData(conn, record) == 0)
         insertData(conn, record)
-    }
-
   }
 
   // compare dataSource with a given dataset.
@@ -180,12 +178,14 @@ object DataSet {
     try {
       pk.zipWithIndex.foreach(x => stmt.setObject(x._2+1, record.rowData.getObject(x._1)))
       val rs = stmt.executeQuery()
+      val rsMeta = rs.getMetaData
+
       if(rs.next) {
-        record.rowData.cells.foreach { cell =>
-          val expected = cell.getObject
-          val real = rs.getObject(cell.name)
-          if(expected != real)
-            throw new AssertionError(s"${record.table} not matched for ${record.rowData} for field ${cell.name}, expected: ${expected} real: ${real}")
+        val rsRow = Row.resultSetToRow(rsMeta, rs)
+        record.rowData.cells.foreach { expected =>
+          val real = rsRow.cell(expected.name)
+          if(compareCell(expected, rsRow.cell(expected.name)))
+            throw new AssertionError(s"${record.table} not matched for ${record.rowData} for field ${expected.name}, expected: ${expected.value} real: ${real.value}")
         }
       }
       else {
@@ -196,6 +196,29 @@ object DataSet {
       stmt.close
     }
 
+  }
+
+  private def compareCell(expected: Row.Cell[_], real: Row.Cell[_]): Boolean = {
+    if(expected.value == null) real.value == null
+    else if(expected.sqltype == real.sqltype) expected.value == real.value
+    else {
+      expected match {
+        case x: BooleanCell => real.getBoolean == x.getBoolean
+        case x: Row.ByteCell => real.getLong == x.getLong
+        case x: Row.IntegerCell => real.getLong == x.getLong
+        case x: Row.ShortCell => real.getLong == x.getLong
+        case x: Row.LongCell => real.getLong == x.getLong
+        case x: Row.FloatCell => real.getDouble == x.getDouble
+        case x: Row.DoubleCell => real.getDouble == x.getDouble
+        case x: Row.StringCell => real.getString == x.getString
+        case x: Row.BigDecimalCell => real.getBigDecimal == x.getBigDecimal
+        case x: Row.DateCell => real.getDate == x.getDate
+        case x: Row.TimeCell => real.getTime == x.getTime
+        case x: Row.TimestampCell => real.getTimestamp == x.getTimestamp
+        case x: Row.BytesCell => util.Arrays.equals( real.getBytes, x.getBytes )
+        case x: Row.NullCell[_] => real.value == null
+      }
+    }
   }
 
   private def compareRecordViaFields(conn: Connection, record:Record): Unit = {
@@ -237,6 +260,7 @@ object DataSet {
         val cells: List[Row.Cell[_]] = record.attributes.map { case x: MetaData =>
           x.value.text match {
             case "@null" => new Row.NullCell[String](x.key, Types.VARCHAR)
+            case "@now" => new Row.TimestampCell(x.key, Types.TIMESTAMP, new java.sql.Timestamp(System.currentTimeMillis))
             case REdate(date) => new Row.DateCell(x.key, Types.DATE, java.sql.Date.valueOf(date))
             case REtimestamp(time) => new Row.TimestampCell(x.key, Types.TIMESTAMP, java.sql.Timestamp.valueOf(time))
             case str: String =>
@@ -254,9 +278,6 @@ object DataSet {
 
 }
 
-class DataSetCompareResult {
-
-}
 
 class DataSet(val records: List[DataSet.Record]) {
 
