@@ -83,7 +83,7 @@ object DbunitDemo1 {
 
     step("prepare data") {
 //      commonDataSet.save(datasource)
-      val prepare =
+      val prepare: DataSet =
         <dataset>
           <users/>
           <users name="wangzhx" birthday="2001-08-08"/>
@@ -117,7 +117,7 @@ object DbunitDemo1 {
     }
 
     step("compare database") {
-      val expected =
+      val expected:DataSet =
         <dataset>
           <users name="wangzx" email="949631531@qq.com" />
         </dataset>

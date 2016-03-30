@@ -17,6 +17,9 @@ object DataSet {
 
   case class Record(table: String, rowData: Row)
 
+  def apply(table: String, rows: List[Row]): DataSet =
+    new DataSet( rows.map(row => Record(table, row)) )
+
   def dumpXml(tagName: String, rows: List[Row]): NodeSeq = rows.map { row =>
     val attributes = row.cells.foldRight(Null: MetaData) { (cell: Row.Cell[_], prev: MetaData) =>
       Attribute(null, cell.name, cell.getString, prev)
@@ -110,9 +113,8 @@ object DataSet {
       sb.append(setPart)
 
       sb.append(" where ")
-      pk.foreach { field =>
-        sb.append(field).append(" = ? ")
-      }
+      val pkWhere = pk.map { field => s" $field = ? " }.mkString("and")
+      sb.append(pkWhere)
 
       val stmt = conn.prepareStatement(sb.toString)
       try {
@@ -184,7 +186,7 @@ object DataSet {
         val rsRow = Row.resultSetToRow(rsMeta, rs)
         record.rowData.cells.foreach { expected =>
           val real = rsRow.cell(expected.name)
-          if(compareCell(expected, rsRow.cell(expected.name)))
+          if(!compareCell(expected, rsRow.cell(expected.name)))
             throw new AssertionError(s"${record.table} not matched for ${record.rowData} for field ${expected.name}, expected: ${expected.value} real: ${real.value}")
         }
       }
@@ -286,5 +288,21 @@ class DataSet(val records: List[DataSet.Record]) {
 
   def compareTo(datasource: DataSource): Boolean = DataSet.compare(datasource, this)
 
-  //def toXML = DataSet.dumpXml(this)
+
+  def +(other: DataSet) = new DataSet(this.records ++ other.records)
+
+  def toXML: NodeSeq = records.map { record =>
+    val attributes = record.rowData.cells.foldRight(Null: MetaData) { (cell: Row.Cell[_], prev: MetaData) =>
+      Attribute(null, cell.name, cell.getString, prev)
+    }
+    <some/>.copy(label = record.table).copy(attributes = attributes)
+  }
+
+  def printXML() = toXML.foreach { node =>
+    val printer = new PrettyPrinter(120,4)
+    val sb = new StringBuilder
+    printer.format(node, sb)
+    println(sb.toString)
+  }
+
 }

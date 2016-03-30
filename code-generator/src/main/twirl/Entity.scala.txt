@@ -1,0 +1,25 @@
+@(table: wangzx.ddd.codegen.TableModel)
+
+package demo
+
+import scala.beans.BeanProperty
+import wangzx.scala_commons.sql.{Table, Column, Id}
+
+/**
+ * ${remarks}
+ *
+ * AUTOMATED GENERATED SOURCE, DON'T MODIFY THIS, IT WILL BE REGENERATED
+ */
+@@Table(value="@table.tablename", camelToUnderscore=true)
+class @table.entityName extends java.io.Serializable {
+@for(col <- table.columns) {
+	/** @col.remarks */
+	@col match {
+		case x if(x.isId && x.autoincrement) => {@@Id(auto=true) }
+    	case x if(x.isId) => {@@Id }
+    	case _ => {}
+	}@@BeanProperty var @col.fieldName: @col.fieldType = _
+
+}
+
+}
