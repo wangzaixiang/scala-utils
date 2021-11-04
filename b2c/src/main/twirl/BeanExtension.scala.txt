@@ -1,0 +1,27 @@
+@(bean: bean2case.BeanContext)
+
+package @bean.scalaPackage
+import scala.collection.JavaConverters._
+
+/**
+ * scala mirror for @bean.javaQualifiedName
+ */
+case class @{bean.scalaSimpleName} (
+    @for(field <- bean.fields) { @field.name: @field.scalaType,
+    }
+)
+
+object @{bean.scalaSimpleName} {
+  implicit def j2s(jInst: @bean.javaQualifiedName): @bean.scalaQualifiedName =
+    @{bean.scalaQualifiedName}(
+      @for(field <- bean.fields) { @field.name = @field.j2s( "jInst." + field.javaGetter ),
+      }
+    )
+
+  implicit def s2j(sInst: @bean.scalaQualifiedName): @bean.javaQualifiedName = {
+    val result = new @bean.javaQualifiedName
+    @for(field <- bean.fields){result.@{field.javaSetter}(@field.s2j("sInst." + field.name))
+    }
+    result
+  }
+}

@@ -1,0 +1,38 @@
+@(service: bean2case.ServiceContext)
+
+package @service.scalaPackage
+
+trait @{service.scalaSimpleName} {
+  @for( method <- service.methods ) {
+  def @{method.name}( @for(para <- method.parameters) {
+    @para.name : @para.scalaTypeName,
+  } ): @method.returnScalaType
+  }
+}
+
+@parameterStop(para: bean2case.ParameterContext) = { @if(para.isLast) {} else {,} }
+
+object @{service.scalaSimpleName} {
+  implicit def j2s(jInst: @service.javaQualifiedName): @service.scalaQualifiedName =
+    new @{service.scalaQualifiedName} {
+        @for(method <- service.methods){
+            def @{method.name}( @for(para <- method.parameters) {
+                @para.name: @{para.scalaTypeName}@parameterStop(para)
+            } ): @method.returnScalaType = {
+                jInst.@{method.name}( @for(para <- method.parameters) { @para.s2j( para.name) @parameterStop(para) } )
+            }
+        }
+    }
+
+  implicit def s2j(sInst: @service.scalaQualifiedName): @service.javaQualifiedName =
+    new @{service.javaQualifiedName} {
+      @for(method <- service.methods){
+        def @{method.name}( @for(para <- method.parameters) {
+            @para.name: @para.javaQualifiedName @parameterStop(para)
+        } ): @method.returnJavaQualifiedName = {
+            sInst.@{method.name}( @for(para <- method.parameters) { @para.j2s( para.name) @parameterStop(para) } )
+        }
+      }
+    }
+}
+

@@ -7,8 +7,8 @@ version := "1.0.1"
 resolvers += "Sonatype snapshots" at "https://oss.sonatype.org/content/repositories/snapshots/"
 
 libraryDependencies ++= Seq(
-  "com.github.wangzaixiang" %% "scala-sql" % "1.0.4",
-  "org.scala-lang.modules" %% "scala-xml" % "1.0.4" ,
+  "com.github.wangzaixiang" %% "scala-sql" % "2.0.7",
+  "org.scala-lang.modules" %% "scala-xml" % "2.0.1" ,
   "com.github.wangzaixiang" %% "spray-json" % "1.3.4",
 
   "com.h2database" % "h2" % "1.4.184" % "test",
